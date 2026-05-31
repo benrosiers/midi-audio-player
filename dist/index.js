@@ -7,11 +7,11 @@
 	██║ ╚═╝ ██║██║██████╔╝██║██║  ██║╚██████╔╝██████╔╝██║╚██████╔╝██║     ███████╗██║  ██║   ██║   ███████╗██║  ██║
 	╚═╝     ╚═╝╚═╝╚═════╝ ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝ ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
 
-	Version: 2.0.0
-	Build:   2026-05-29 17:16:44
+	Version: 2.0.1
+	Build:   2026-05-31 02:44:14
 	Author:  Maxime Larrivée-Roy <mlarriveeroy@gmail.com>
 	Github:  https://github.com/webaudiofonts/midi-audio-player/
-	Website: https://webaudiofonts.github.io/midi-audio-player/
+	Website: https://webaudiofonts.com/midiaudioplayer/
 
 */
 
@@ -1213,7 +1213,7 @@ var index = {
 };
 
 // node_modules/webaudiofontplayer/dist/index.js
-var WebAudioFontPlayer = class {
+var WebAudioFontPlayer = class _WebAudioFontPlayer {
   #audioCtx = null;
   #compressor = null;
   #preset = null;
@@ -1228,24 +1228,33 @@ var WebAudioFontPlayer = class {
   #sustain = false;
   #pitchBendValue = 8192;
   #notesWaitingForSustain = /* @__PURE__ */ new Set();
-  constructor(preset, audioCtx, compressor = null) {
+  constructor(preset, audioCtx, compressor = null, callback = null) {
     this.#audioCtx = audioCtx;
     this.#compressor = compressor;
-    this.#preset = preset;
     this.#mainGain = this.#audioCtx.createGain();
     this.#mainGain.gain.setValueAtTime(this.#volumeValue, this.#audioCtx.currentTime);
     this.#expressionGain = this.#audioCtx.createGain();
     this.#expressionGain.gain.setValueAtTime(this.#expressionValue, this.#audioCtx.currentTime);
     this.#mainGain.connect(this.#expressionGain);
     this.#expressionGain.connect(this.#compressor ? this.#compressor.input : this.#audioCtx.destination);
-    this.#preset.zones.map((zone) => this.#adjustZone(zone));
+    this.setPreset(preset).then(() => {
+      if (typeof callback === "function") callback();
+    });
   }
   get preset() {
     return this.#preset;
   }
   set preset(preset) {
+    this.setPreset(preset);
+  }
+  static load(preset, audioCtx, compressor = null) {
+    return new Promise((resolve) => {
+      const player = new _WebAudioFontPlayer(preset, audioCtx, compressor, () => resolve(player));
+    });
+  }
+  async setPreset(preset) {
     this.#preset = preset;
-    this.#preset.zones.map((zone) => this.#adjustZone(zone));
+    await Promise.all(this.#preset.zones.map((zone) => this.#adjustZone(zone)));
   }
   close() {
     const now = this.#audioCtx.currentTime;
@@ -1380,30 +1389,24 @@ var WebAudioFontPlayer = class {
         break;
     }
   }
-  #adjustZone(zone) {
-    if (zone.buffer) return Promise.resolve(zone);
+  async #adjustZone(zone) {
+    if (zone.buffer) return zone;
     zone.delay = 0;
     if (zone.file) {
-      const decoded = atob(zone.file);
-      const uint8Array = new Uint8Array(decoded.length);
-      for (let i = 0; i < decoded.length; i++) uint8Array[i] = decoded.charCodeAt(i);
-      this.#audioCtx.decodeAudioData(
-        uint8Array.buffer,
-        (audioBuffer) => {
-          zone.buffer = audioBuffer;
-          this.#applyZoneParameters(zone);
-          return zone;
-        },
-        (error) => {
-          console.error("Audio decoding error:", error);
-          console.warn(this.#preset);
-          return false;
-        }
-      );
+      const binary = atob(zone.file);
+      const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+      try {
+        zone.buffer = await this.#audioCtx.decodeAudioData(bytes.buffer);
+        this.#applyZoneParameters(zone);
+      } catch (error) {
+        console.error("Audio decoding error:", error);
+        console.warn(this.#preset);
+        return false;
+      }
     } else {
       this.#applyZoneParameters(zone);
-      return zone;
     }
+    return zone;
   }
   #applyZoneParameters(zone) {
     zone.loopStart = this.#numValue(zone.loopStart, 0);
@@ -1495,9 +1498,7 @@ var WebAudioFontPlayer = class {
     return envelope;
   }
   #findZone(pitch) {
-    const zone = this.#preset.zones.findLast((z) => pitch >= z.keyRangeLow && pitch <= z.keyRangeHigh + 1);
-    if (zone) this.#adjustZone(zone);
-    return zone;
+    return this.#preset.zones.findLast((z) => pitch >= z.keyRangeLow && pitch <= z.keyRangeHigh);
   }
   #limitVolume(v) {
     const requestedVolume = v ? 1 * v : 0.5;
@@ -1963,7 +1964,7 @@ var MidiAudioPlayer = class _MidiAudioPlayer extends index.Player {
     if (!presetInfo) throw new Error("Invalid preset: ".concat(presetId));
     this.#presetMap[presetInfo.program] = presetInfo;
     const preset = await this.getPreset(presetId);
-    this.#players[channel].preset = preset;
+    await this.#players[channel].setPreset(preset);
     this.#setupChange();
   }
   async load(content, setup) {
@@ -2414,12 +2415,9 @@ var MidiAudioPlayer = class _MidiAudioPlayer extends index.Player {
             this.#players[channel].setPitchBend?.(event.value);
             break;
           case "Program Change":
-            if (
-              // (this.#opts.presetAuto || this.#opts.presetRandom) &&
-              event.value >= 0 && event.value <= 127 && this.#instruments[event.value + 1] !== void 0 && event.channel != 10
-            ) {
+            if (event.value >= 0 && event.value <= 127 && this.#instruments[event.value + 1] !== void 0 && event.channel != 10) {
               if (this.#players[channel].preset?.program !== event.value + 1) {
-                this.#players[channel].preset = this.#instruments[event.value + 1];
+                this.#players[channel].setPreset(this.#instruments[event.value + 1]);
               }
             }
             break;
@@ -2489,8 +2487,8 @@ var MidiAudioPlayer = class _MidiAudioPlayer extends index.Player {
     this.#presetMap[program] = preset;
     return await this.getPreset(preset.id);
   }
-  async #createPlayer(preset) {
-    return new index_default(preset, this.#audioCtx, this.#compressor);
+  #createPlayer(preset) {
+    return index_default.load(preset, this.#audioCtx, this.#compressor);
   }
   async #handleMidiPipeline(event) {
     if (!this.isPlaying()) return;
@@ -2525,7 +2523,7 @@ var MidiAudioPlayer = class _MidiAudioPlayer extends index.Player {
         if (!this.#players[event.channel]) return;
         if (event.channel == 10 || event.value > 127 || event.value < 0) break;
         if (this.#players[event.channel] !== void 0 && this.#players[event.channel].preset.program != event.value + 1)
-          this.#players[event.channel].preset = this.#instruments[event.value + 1];
+          this.#players[event.channel].setPreset(this.#instruments[event.value + 1]);
         break;
       case "Karaoke Event":
         if (event.tick < this.tick - this.secondsToTicks(10)) return;
