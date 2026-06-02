@@ -55,7 +55,7 @@
   },
   "dependencies": {
     "midi-player-js": "^2.0.17",
-    "webaudiofontplayer": "^1.0.2"
+    "webaudiofontplayer": "^1.0.3"
   },
   "devDependencies": {
     "esbuild": "^0.28.0"

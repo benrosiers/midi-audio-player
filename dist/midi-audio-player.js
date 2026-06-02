@@ -7,8 +7,8 @@
 	██║ ╚═╝ ██║██║██████╔╝██║██║  ██║╚██████╔╝██████╔╝██║╚██████╔╝██║     ███████╗██║  ██║   ██║   ███████╗██║  ██║
 	╚═╝     ╚═╝╚═╝╚═════╝ ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝ ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
 
-	Version: 2.0.1
-	Build:   2026-05-31 02:44:14
+	Version: 2.0.2
+	Build:   2026-06-02 12:19:59
 	Author:  Maxime Larrivée-Roy <mlarriveeroy@gmail.com>
 	Github:  https://github.com/webaudiofonts/midi-audio-player/
 	Website: https://webaudiofonts.com/midiaudioplayer/
@@ -1252,9 +1252,10 @@
         const player = new _WebAudioFontPlayer(preset, audioCtx, compressor, () => resolve(player));
       });
     }
-    async setPreset(preset) {
+    async setPreset(preset, nonblocking = false) {
       this.#preset = preset;
-      await Promise.all(this.#preset.zones.map((zone) => this.#adjustZone(zone)));
+      if (nonblocking) this.#preset.zones.map((zone) => this.#adjustZone(zone));
+      else await Promise.all(this.#preset.zones.map((zone) => this.#adjustZone(zone)));
     }
     close() {
       const now = this.#audioCtx.currentTime;
@@ -1959,13 +1960,16 @@
         throw new Error("Invalid preset: ".concat(id));
       }
     }
-    async loadPreset(presetId, channel) {
+    async loadPreset(presetId, channel, nonblocking = false) {
       const presetInfo = await this.findPreset(presetId);
       if (!presetInfo) throw new Error("Invalid preset: ".concat(presetId));
       this.#presetMap[presetInfo.program] = presetInfo;
       const preset = await this.getPreset(presetId);
-      await this.#players[channel].setPreset(preset);
-      this.#setupChange();
+      if (nonblocking) this.#players[channel].setPreset(preset, nonblocking).then(() => this.#setupChange());
+      else {
+        await this.#players[channel].setPreset(preset, nonblocking);
+        this.#setupChange();
+      }
     }
     async load(content, setup) {
       if (typeof content === "string") {
@@ -1993,6 +1997,15 @@
       } catch (e) {
         await this.loadArrayBuffer(await this.#repairMidi(content));
       }
+      if (this.#opts.karaoke) {
+        this.#log("Generating karaoke frames...");
+        this.#lyrics = null;
+        await this.#generateKaraokeFrames();
+        if (this.#title) this.#sendKaraokeFrame("title", this.#title);
+      }
+      this.#log("Trim midi events...");
+      this.#trimMidiEvents();
+      queueMicrotask(() => this.triggerPlayerEvent("computed"));
       this.#log("Loading instruments...");
       this.#channels = await this.#getInstruments();
       this.#channelStates = Object.keys(this.#channels).reduce((acc, key) => ({ ...acc, [key]: false }), {});
@@ -2003,8 +2016,8 @@
           this.#channelVolumes[channel] = setup.volumes[channel];
         }));
       }
-      const setupPrograms = /* @__PURE__ */ new Set();
       const setupPresets = {};
+      const setupPrograms = /* @__PURE__ */ new Set();
       if (setup?.presets !== void 0) {
         await Promise.all(Object.keys(setup.presets).map(async (channel) => {
           const presetInfo = await this.findPreset(setup.presets[channel]);
@@ -2015,7 +2028,7 @@
       }
       const uniqueInstruments = await this.#getUniqueInstruments();
       if (!Object.values(this.#channels).length) this.#log("Error: no instrument found");
-      const presets = Promise.all([...uniqueInstruments].map(async (program) => {
+      await Promise.all([...uniqueInstruments].map(async (program) => {
         if (setupPrograms.has(program)) return;
         let preset = null;
         if (this.#presetMap[program] !== void 0) preset = await this.getPreset(this.#presetMap[program].id);
@@ -2023,16 +2036,6 @@
         else preset = await this.#getAutoPreset(program);
         this.#instruments[program] = preset;
       }));
-      if (this.#opts.karaoke) {
-        this.#log("Generating karaoke frames...");
-        this.#lyrics = null;
-        await this.#generateKaraokeFrames();
-        if (this.#title) this.#sendKaraokeFrame("title", this.#title);
-      }
-      this.#log("Trim midi events...");
-      this.#trimMidiEvents();
-      queueMicrotask(() => this.triggerPlayerEvent("computed"));
-      await presets;
       await Promise.all(Object.keys(this.#channels).map(async (channel) => {
         if (this.#players[channel]) this.#players[channel].close();
         if (setupPresets[channel] !== void 0) this.#players[channel] = await this.#createPlayer(setupPresets[channel]);
