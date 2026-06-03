@@ -4,7 +4,10 @@
 
 **Real MIDI playback in the browser — powered by Web Audio API and WebAudioFont.**
 
-[See full feature demo here](https://webaudiofonts.com/demo/)
+[See full feature demo here](https://webaudiofonts.com/demo/) / [Explore the full instrument library and listen before you use](https://webaudiofonts.com/catalog/)
+
+![demo](https://webaudiofonts.com/images/demo.webp)
+
 
 No server. No heavy runtime. Just load a `.mid` or `.kar` file and play it — with reverb, a 10-band EQ, per-channel volume control, karaoke support, and over 3,000 instrument presets.
 
