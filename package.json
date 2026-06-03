@@ -1,20 +1,24 @@
 {
   "name": "midi-audio-player",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "description": "Real MIDI playback in the browser — powered by Web Audio API and WebAudioFont.",
   "keywords": [
     "midi",
     "midi-player",
     "webaudio",
     "webaudiofont",
+    "webaudiofonts",
     "audio",
     "music",
     "browser-audio",
     "midi-js",
     "web-audio-api",
-    "midi-playback"
+    "midi-playback",
+    "midi-audio-player",
+    "html5",
+    "midi-player-js"
   ],
-  "homepage": "https://webaudiofonts.com/",
+  "homepage": "https://webaudiofonts.com/midiaudioplayer/",
   "bugs": {
     "url": "https://github.com/WebAudioFonts/midi-audio-player/issues"
   },
@@ -35,7 +39,6 @@
     "index.js",
     "index.d.ts",
     "README.md",
-    "CHANGELOG.md",
     "LICENSE"
   ],
   "exports": {
@@ -52,12 +55,16 @@
   },
   "dependencies": {
     "midi-player-js": "^2.0.17",
-    "webaudiofontplayer": "^1.0.0"
+    "webaudiofontplayer": "^1.0.3"
   },
   "devDependencies": {
     "esbuild": "^0.28.0"
   },
   "engines": {
     "node": ">=18"
+  },
+  "allowScripts": {
+    "esbuild@0.28.0": true,
+    "midi-player-js@2.0.17": true
   }
 }
